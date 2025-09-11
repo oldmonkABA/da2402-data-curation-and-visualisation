@@ -1,0 +1,149 @@
+create database ecom;
+ SHOW VARIABLES LIKE 'validate_password%';
+create user 'ecomuser'@'localhost' identified by 'Ecomuser#123'
+grant all on ecom.* to 'ecomuser'@'localhost';
+
+create user 'ecomuser1'@'localhost' identified by 'Ecomuser#1123';
+grant select on ecom.customers to 'ecomuser1'@'localhost';
+
+CREATE TABLE customers (
+  customer_id INT UNSIGNED NOT NULL,
+  name        VARCHAR(100) NOT NULL,
+  email       VARCHAR(150) NOT NULL UNIQUE,
+  place       Varchar(20),
+  PRIMARY KEY (customer_id)
+)
+
+
+CREATE TABLE products (
+  product_id   INT UNSIGNED NOT NULL,
+  product_name VARCHAR(60)  NOT NULL,
+  price  float(6,2)   NOT NULL, 
+  description varchar(20),
+  PRIMARY KEY (product_id)
+)
+
+
+CREATE TABLE orders (
+  order_id    INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  customer_id INT UNSIGNED NOT NULL,
+  product_id  INT UNSIGNED NOT NULL,
+  order_date  DATE         NOT NULL,
+  PRIMARY KEY (order_id),
+  CONSTRAINT fk_orders_customer
+    FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT fk_orders_product
+    FOREIGN KEY (product_id)  REFERENCES products(product_id)
+    ON DELETE RESTRICT ON UPDATE CASCADE
+) 
+
+insert into customers(customer_id,name,email,place) values (1,'Cust_1','cust1@gmail.com','Delhi');
+insert into customers(customer_id,name,email,place) values (2,'Cust_2','cust1@gmail.com','Mumbai');
+-- Parent
+INSERT INTO products(product_id, product_name, price, description)
+VALUES (10, 'P_10', 199, 'Snacks');
+
+-- Child referencing parent
+INSERT INTO orders(customer_id, product_id, order_date) VALUES ( 1, 10, '2020-01-01');
+INSERT INTO orders(customer_id, product_id, order_date) VALUES (200, 100, '2020-01-01');
+
+-- Delete blocked (RESTRICT):
+DELETE FROM products WHERE product_id = 10;
+-- -> ERROR 1451: Cannot delete or update a parent row: a foreign key constraint fails
+
+-- Update cascades to child:
+UPDATE products SET product_id = 20 WHERE product_id = 10;
+-- orders.product_id automatically becomes 20
+
+
+SET FOREIGN_KEY_CHECKS = 0;
+sudo apt-get install default-libmysqlclient-dev on Ubuntu; 
+on macOS brew install mysql
+pip install sqlalchemy mysqlclient
+engine = create_engine("mysql://ecomuser:Ecomuser%23123@localhost/ecom")
+
+pip install sqlalchemy pymysql
+engine = create_engine("mysql+pymysql://ecomuser:Ecomuser%23123@localhost/ecom")
+
+pip install mysql-connector-python
+engine = create_engine("mysql+mysqlconnector://ecomuser:Ecomuser%23123@localhost/ecom")
+
+
+-- Quick peek
+SELECT * FROM customers LIMIT 5;
+
+--  Customers from a city (ordered)
+SELECT name, email FROM customers WHERE place = 'Delhi' ORDER BY name;
+
+--  Products in a price band
+SELECT product_id, product_name, price FROM products WHERE price BETWEEN 200 AND 400 ORDER BY price DESC;
+
+-- Customer count by city
+SELECT place, COUNT(*) AS customers FROM customers
+GROUP BY place
+ORDER BY customers DESC;
+
+--  Average price by product type
+SELECT description, ROUND(AVG(price),2) AS avg_price
+FROM products
+GROUP BY description;
+
+-- Purpose: Most ordered products (by order count)
+SELECT p.product_id, p.product_name, COUNT(*) AS times_ordered
+FROM orders o
+JOIN products p ON p.product_id = o.product_id
+GROUP BY p.product_id
+ORDER BY times_ordered DESC, p.product_id;
+
+-- Purpose: Cities with ≥ 300 orders
+SELECT c.place, COUNT(*) AS orders_count
+FROM orders o
+JOIN customers c ON c.customer_id = o.customer_id
+GROUP BY c.place
+HAVING COUNT(*) >= 300
+ORDER BY orders_count DESC;
+
+-- Purpose: Orders per month (YYYY-MM)
+SELECT DATE_FORMAT(order_date, '%Y-%m') AS y_m, COUNT(*) AS orders_in_month
+FROM orders
+GROUP BY y_m
+ORDER BY y_m;
+
+-- Purpose: Orders in a specific year
+SELECT YEAR(order_date) AS yr, COUNT(*) AS orders_in_year
+FROM orders
+GROUP BY yr
+ORDER BY yr;
+
+-- Purpose: Busiest day
+SELECT order_date, COUNT(*) AS orders_on_day
+FROM orders
+GROUP BY order_date
+ORDER BY orders_on_day DESC, order_date DESC
+LIMIT 1;
+
+-- Purpose: Customers who never ordered
+SELECT c.*
+FROM customers c
+LEFT JOIN orders o ON o.customer_id = c.customer_id
+WHERE o.order_id IS NULL;
+
+-- Purpose: Products never ordered
+SELECT p.*
+FROM products p
+LEFT JOIN orders o ON o.product_id = p.product_id
+WHERE o.order_id IS NULL;
+
+
+What’s each product’s % of total revenue?
+SELECT
+  p.product_id,
+  p.product_name,
+  SUM(p.price) AS revenue,
+  ROUND(100 * SUM(p.price) / NULLIF(SUM(SUM(p.price)) OVER (), 0), 2) AS pct_of_total
+FROM orders o
+JOIN products p ON p.product_id = o.product_id
+GROUP BY p.product_id, p.product_name
+ORDER BY revenue DESC, p.product_id;
+
